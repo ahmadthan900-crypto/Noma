@@ -1,0 +1,91 @@
+
+name: Build Rushd Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. تحميل المشروع كاملاً
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. تثبيت Java
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # 3. تثبيت Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # 4. البحث عن مجلد التطبيق تلقائياً
+      - name: Find Flutter Project
+        shell: bash
+        run: |
+          echo "Searching for Flutter project..."
+
+          PUBSPEC=$(find . -type f -name pubspec.yaml \
+            -not -path '*/.dart_tool/*' \
+            -not -path '*/build/*' | head -n 1)
+
+          if [ -z "$PUBSPEC" ]; then
+            echo "ERROR: pubspec.yaml not found!"
+            echo "Project files:"
+            find . -maxdepth 4 -type f | head -n 150
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PUBSPEC")
+
+          echo "Found project: $PROJECT_DIR"
+          echo "FLUTTER_PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+      # 5. تجهيز Android
+      - name: Prepare Android
+        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
+        run: |
+          if [ ! -d android ]; then
+            flutter create --platforms=android .
+          fi
+
+      # 6. تحميل المكتبات
+      - name: Install Dependencies
+        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
+        run: flutter pub get
+
+      # 7. فحص المشروع
+      - name: Analyze Flutter Project
+        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
+        run: flutter analyze --no-pub
+        continue-on-error: true
+
+      # 8. بناء التطبيق
+      - name: Build Release APK
+        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
+        run: flutter build apk --release
+
+      # 9. استخراج APK
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rushd-Android-APK
+          path: ${{ env.FLUTTER_PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
