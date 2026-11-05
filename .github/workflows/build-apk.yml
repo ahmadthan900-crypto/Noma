@@ -1,91 +1,75 @@
 
-name: Build Rushd Android APK
+name: Build Rushd APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. تحميل المشروع كاملاً
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. تثبيت Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 3. تثبيت Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      # 4. البحث عن مجلد التطبيق تلقائياً
-      - name: Find Flutter Project
-        shell: bash
+      # فك ضغط المشروع
+      - name: Extract Rushd Project
         run: |
-          echo "Searching for Flutter project..."
+          sudo apt-get update
+          sudo apt-get install -y unzip
 
-          PUBSPEC=$(find . -type f -name pubspec.yaml \
-            -not -path '*/.dart_tool/*' \
-            -not -path '*/build/*' | head -n 1)
+          unzip -o Rushd_Project.zip -d extracted
 
-          if [ -z "$PUBSPEC" ]; then
-            echo "ERROR: pubspec.yaml not found!"
-            echo "Project files:"
-            find . -maxdepth 4 -type f | head -n 150
-            exit 1
-          fi
+          echo "Project extracted!"
+          ls -la extracted/Rushd_Project/mobile/rushd_flutter
 
-          PROJECT_DIR=$(dirname "$PUBSPEC")
+      # التأكد من وجود كود التطبيق
+      - name: Check Flutter Files
+        run: |
+          test -f extracted/Rushd_Project/mobile/rushd_flutter/pubspec.yaml
+          test -f extracted/Rushd_Project/mobile/rushd_flutter/lib/main.dart
+          echo "Flutter files found successfully!"
 
-          echo "Found project: $PROJECT_DIR"
-          echo "FLUTTER_PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-
-      # 5. تجهيز Android
+      # تجهيز Android
       - name: Prepare Android
-        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
+        working-directory: extracted/Rushd_Project/mobile/rushd_flutter
         run: |
           if [ ! -d android ]; then
             flutter create --platforms=android .
           fi
 
-      # 6. تحميل المكتبات
+      # تحميل المكتبات
       - name: Install Dependencies
-        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
+        working-directory: extracted/Rushd_Project/mobile/rushd_flutter
         run: flutter pub get
 
-      # 7. فحص المشروع
-      - name: Analyze Flutter Project
-        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
-        run: flutter analyze --no-pub
-        continue-on-error: true
-
-      # 8. بناء التطبيق
-      - name: Build Release APK
-        working-directory: ${{ env.FLUTTER_PROJECT_DIR }}
+      # بناء التطبيق
+      - name: Build APK
+        working-directory: extracted/Rushd_Project/mobile/rushd_flutter
         run: flutter build apk --release
 
-      # 9. استخراج APK
+      # رفع APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Rushd-Android-APK
-          path: ${{ env.FLUTTER_PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
+          name: Rushd-APK
+          path: extracted/Rushd_Project/mobile/rushd_flutter/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
